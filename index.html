@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Collision Detection</title>
+    <style>
+        body {
+            background-color: black;
+            width: 100vw;
+            height: 100vh;
+            color: white;
+        }
+
+        .container {
+            width: 1200px;
+            height: 600px;
+            margin: auto;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            position: absolute;
+        }
+
+        canvas {
+
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <canvas id="myCanvas" width="1200" height="600"></canvas>
+    <div id="fps"></div>
+    <div id="count"></div>
+    <div id="change"></div>
+</div>
+
+<script>
+
+    class Shape {
+        constructor(x, y, type) {
+            this.x = x;
+            this.y = y;
+            this.type = type; // 'circle', 'square'
+            this.radius = 10; // 用于圆形和三角形
+            this.size = 20; // 用于正方形
+            this.vx = Math.random() * 2 - 1;
+            this.vy = Math.random() * 2 - 1;
+            this.color = shapeColors[type]; // 固定颜色
+            this.isColliding = false; // 是否发生碰撞
+        }
+
+        draw() {
+            ctx.fillStyle = this.isColliding ? '#FFDF00' : this.color;
+            if (this.type === 'circle') {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (this.type === 'square') {
+                ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+            }
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+
+            // 边界检测
+            if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+                this.vx = -this.vx;
+            }
+            if (this.y - this.radius < 0 || this.y + this.radius > canvas.height) {
+                this.vy = -this.vy;
+            }
+        }
+    }
+
+    const canvas = document.getElementById('myCanvas');
+    const ctx = canvas.getContext('2d');
+    const fpsElement = document.getElementById('fps');
+    const countElement = document.getElementById('count');
+    const changeElement = document.getElementById('change');
+    let useSap = false
+
+    const shapes = [];
+    let numShapes = 0
+    const shapeColors = {
+        circle: 'rgba(255,110,163)',
+        square: '#85DAF9',
+    };
+
+    const cb = () => {
+        shapes.length = 0
+        useSap = !useSap
+        let numShapes = 2000 * (useSap ? 3 : 1)
+        for (let i = 0; i < numShapes; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const type = Math.random() < 0.5 ? 'circle' : 'square';
+            shapes.push(new Shape(x, y, type));
+        }
+
+        countElement.textContent = `数量: ${numShapes}`;
+        changeElement.textContent = `点击切换，当前模式为${useSap ? 'SAP算法' : '普通双层遍历'}`;
+    }
+    changeElement.addEventListener('click', cb)
+    cb()
+
+
+    // 碰撞检测
+    function checkCollision(shapeA, shapeB) {
+        if (shapeA.type === 'circle' && shapeB.type === 'circle') {
+            const dx = shapeA.x - shapeB.x;
+            const dy = shapeA.y - shapeB.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < shapeA.radius + shapeB.radius;
+        } else if (shapeA.type === 'square' && shapeB.type === 'square') {
+            const dx = Math.abs(shapeA.x - shapeB.x);
+            const dy = Math.abs(shapeA.y - shapeB.y);
+            return dx < shapeA.size / 2 + shapeB.size / 2 && dy < shapeA.size / 2 + shapeB.size / 2;
+        } else if (shapeA.type === 'circle' && shapeB.type === 'square') {
+            const dx = Math.abs(shapeA.x - shapeB.x);
+            const dy = Math.abs(shapeA.y - shapeB.y);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < shapeA.radius + shapeB.size / 2;
+        } else if (shapeA.type === 'square' && shapeB.type === 'circle') {
+            const dx = Math.abs(shapeA.x - shapeB.x);
+            const dy = Math.abs(shapeA.y - shapeB.y);
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < shapeA.size / 2 + shapeB.radius;
+        }
+        return false;
+    }
+
+    class AABB {
+        constructor(left, right, top, bottom) {
+            this.left = left;
+            this.right = right;
+            this.top = top;
+            this.bottom = bottom;
+        }
+
+        static fromShape(shape) {
+            if (shape.type === 'circle') {
+                return new AABB(
+                    shape.x - shape.radius,
+                    shape.x + shape.radius,
+                    shape.y - shape.radius,
+                    shape.y + shape.radius
+                );
+            } else if (shape.type === 'square') {
+                return new AABB(
+                    shape.x - shape.size / 2,
+                    shape.x + shape.size / 2,
+                    shape.y - shape.size / 2,
+                    shape.y + shape.size / 2
+                );
+            }
+        }
+
+        intersects(other) {
+            return this.right >= other.left && this.left <= other.right &&
+                this.bottom >= other.top && this.top <= other.bottom;
+        }
+    }
+
+    function sweepAndPrune(shapes) {
+        const aabbs = shapes.map(shape => {
+            return shape.aabb
+        });
+
+        aabbs.sort((a, b) => a.left - b.left);
+
+        let queue = [];
+
+        const result = [];
+
+        for (let i = 0; i < aabbs.length; i++) {
+            const aabbA = aabbs[i];
+
+            queue = queue.filter(aabb => aabb.right >= aabbA.left);
+
+            for (let j = 0; j < queue.length; j++) {
+                const aabbB = queue[j];
+                if (aabbA.intersects(aabbB)) {
+                    result.push([aabbA, aabbB]);
+                }
+            }
+
+            queue.push(aabbA);
+        }
+
+        return result;
+    }
+
+
+    // 渲染和更新
+    let lastTime = performance.now();
+
+    function animate() {
+        const now = performance.now();
+        const deltaTime = now - lastTime;
+        lastTime = now;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 更新和绘制形状
+        for (let i = 0; i < shapes.length; i++) {
+            const shape = shapes[i]
+            shape.update();
+            shape.isColliding = false; // 重置碰撞状态
+            if (useSap) {
+                const aabb = AABB.fromShape(shape)
+                shape.aabb = aabb
+                aabb.shape = shape
+            }
+        }
+
+        if (useSap) {
+            const result = sweepAndPrune(shapes)
+            let count = 0
+            for (const collision of result) {
+                const [aabb1, aabb2] = collision
+                const shape1 = aabb1.shape
+                const shape2 = aabb2.shape
+                if (checkCollision(shape1, shape2)) {
+                    shape1.isColliding = true;
+                    shape2.isColliding = true;
+                    count++
+                }
+            }
+        } else {
+
+            for (let i = 0; i < shapes.length; i++) {
+                for (let j = i + 1; j < shapes.length; j++) {
+                    if (checkCollision(shapes[i], shapes[j])) {
+                        shapes[i].isColliding = true;
+                        shapes[j].isColliding = true;
+                    }
+                }
+            }
+        }
+
+        for (let i = 0; i < shapes.length; i++) {
+            shapes[i].draw();
+        }
+
+        const fps = Math.round(1000 / deltaTime);
+        fpsElement.textContent = `FPS: ${fps}`;
+
+        requestAnimationFrame(animate);
+    }
+
+    animate();
+</script>
+</body>
+
+</html>
