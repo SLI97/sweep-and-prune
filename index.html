@@ -181,7 +181,13 @@
         for (let i = 0; i < aabbs.length; i++) {
             const aabbA = aabbs[i];
 
-            queue = queue.filter(aabb => aabb.right >= aabbA.left);
+             while(true){
+                if(queue[0]?.right < aabbA.left){
+                    queue.shift()
+                }else{
+                    break
+                }
+            }
 
             for (let j = 0; j < queue.length; j++) {
                 const aabbB = queue[j];
